@@ -1,4 +1,4 @@
-import argparse, glob, json, random, os
+import argparse, glob, json, os
 
 import numpy as np
 import pandas as pd
@@ -25,9 +25,10 @@ args.optim_algo = 'adamw'
 print(args)
 
 # global setting
+torch.manual_seed(7)
 os.makedirs(args.results, exist_ok=True)
 json.dump(vars(args), open(f"{args.results}/args_{args.mode}.json", "w"))
-classes = args.coarse_dim + 1
+classes = args.coarse_dim
 
 # check GPU
 print(torch.cuda.is_available(), torch.backends.cudnn.is_available(), torch.cuda.get_device_name(0))
@@ -42,24 +43,31 @@ if 1:
     valid:  -                   same as above       -
                                 same as above
     infer:  -                   -                   custom
+    
+    in-dist
+    0 atopic_dermatitis, 1 contact_dermatitis, 2 drug_eruption, 3 fungal_infections, 4 scabies, 5 urticaria, 6 psoriasis
     """
     # load in
     df = pd.read_csv("/volume/my-volume/itch/my_pruritus/clinical/annotation_train_round1_7class_bypat.csv")
     df_train, df_valid = df[df['fold_index']<5], df[df['fold_index']>=5]
+    if 1:
+        derm_in_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/in_derm/*.jpg"))
+        derm_in_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/in_derm/{i}-*.jpg")) for i in (0,4,5) ]
+        derm_in_labels = [0]*derm_in_n[0] + [4]*derm_in_n[1] + [5]*derm_in_n[2]
 
     # load out
-    out_train_path = sorted(glob.glob("../my_pruritus/ood_data/out_rel/[0-3]-*"))
-    out_valid_path = sorted(glob.glob("../my_pruritus/ood_data/out_rel/[4-7]-*"))
-    out_n = [ len(glob.glob(f"../my_pruritus/ood_data/out_rel/{i}-*")) for i in range(8) ] # [100]*8
+    #out_train_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/out_rel/[0-3]-*"))
+    #out_valid_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/out_rel/[4-7]-*"))
+    #out_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/out_rel/{i}-*")) for i in range(8) ] # [100]*8
 
     # merge
     train_path = list(df_train['data']) #+ out_train_path
     train_fine_label = list(df_train['label']) #+ [args.coarse_dim]*out_n[0] + [args.coarse_dim+1]*out_n[1]\
         #+ [args.coarse_dim+2]*out_n[2] + [args.coarse_dim+3]*out_n[3]
     train_coarse_label = [0]*len(df_train['label']) #+ [1]*sum(out_n[:4])
-    valid_path = list(df_valid['data']) #+ out_valid_path
-    valid_fine_label = list(df_valid['label']) #+ [args.coarse_dim]*sum(out_n[4:])
-    valid_coarse_label = [0]*len(df_valid['label']) #+ [1]*sum(out_n[4:])
+    valid_path = list(df_valid['data']) #+ out_valid_path + derm_in_path
+    valid_fine_label = list(df_valid['label']) #+ [args.coarse_dim]*sum(out_n[4:]) + derm_in_labels
+    valid_coarse_label = [0]*len(df_valid['label']) #+ [1]*sum(out_n[4:]) + + [0]*len(derm_in_labels)
     print(len(train_path), len(train_fine_label), len(train_coarse_label),\
         len(valid_path), len(valid_fine_label), len(valid_coarse_label)) # 1458, 1458, 1458, 572, 572, 572
 if args.mode == 'train':
@@ -75,8 +83,7 @@ if args.mode == 'train':
     fine_weights_in = torch.tensor(1/cnts/(1/cnts).sum(), dtype=torch.float32)
     fine_weights_ou = torch.tensor([0]*(args.output_dim-args.fine_dim), dtype=torch.float32)
     fine_weights = torch.cat((fine_weights_in, fine_weights_ou)).to(device)
-    coarse_weights = None
-        #torch.tensor([cnts[args.coarse_dim:].sum()/cnts.sum(), \
+    coarse_weights = None #torch.tensor([cnts[args.coarse_dim:].sum()/cnts.sum(), \
         #cnts[:args.coarse_dim].sum()/cnts.sum()], dtype=torch.float32).to(device)
 else:
     fine_weights = coarse_weights = None
@@ -157,7 +164,7 @@ for ep in range(args.epochs):
             # basic
             x, y_fine, y_coarse = x.to(device), y_fine.to(device), y_coarse.to(device)
             y_fine, y_coarse = y_fine.reshape(-1), y_coarse.reshape(-1)
-            pred = model(x) # print(torch.nn.functional.softmax(pred[:1,:],dim=1))
+            pred = model(x)
             loss = loss_func(pred, y_fine, y_coarse, False) # CE:(B,2),(B,)int
 
             # history loss
@@ -186,14 +193,14 @@ for ep in range(args.epochs):
 
         if args.mode=='train':
             # checkpoint
-            if ep==0 or history.valid_map[-1]>history.valid_map[-2]:
+            if ep==0 or history.valid_map[-1]>=max(history.valid_map):
                 torch.save(model.state_dict(), os.path.join(args.results, 'model.pt'))
             history.save()
-            #fcr = [ (float(t1.cpu().detach().numpy()), \
-            #        float(t2.cpu().detach().numpy())) for t1,t2 in loss_func.fine_coarse_rate ]
-            #batches = len(train_loader)
-            #fcr = [ sum(fcr[i*batches:(i+1)*batches])/batches for i in range(len(fcr)//batches) ]
-            #json.dump(fcr, open(os.path.join(args.results, 'fc.json'),'w'))
+            # batches, lf, lc = len(train_loader), loss_func.fine_history, loss_func.coarse_history
+            # lf_mean = [ sum(lf[i*batches:(i+1)*batches])/batches for i in range(len(lf)//batches) ]
+            # lc_mean = [ sum(lc[i*batches:(i+1)*batches])/batches for i in range(len(lc)//batches) ]
+            # json.dump(lf_mean, open(os.path.join(args.results, 'lf.json'),'w'))
+            # json.dump(lc_mean, open(os.path.join(args.results, 'lc.json'),'w'))
         
         elif args.mode=='valid':
             print("aps=", history.valid_aps[-1])

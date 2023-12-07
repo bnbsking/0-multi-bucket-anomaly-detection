@@ -24,7 +24,7 @@ class MyDataset(Dataset):
         if mode=="train":
             self.transform = transforms.Compose([
                 transforms.Resize((224,224)),
-                transforms.ColorJitter([0.9,1.1], [0.9,1.1], [0.9,1.1], [-0.2,0.2]),
+                transforms.ColorJitter([0.8,1.2], [0.8,1.2], [0.8,1.2], [-0.2,0.2]),
                 # brigntness, contrast, saturation, hue
                 #transforms.RandomRotation([-90,90]),
                 transforms.RandomHorizontalFlip(0.5),
@@ -93,15 +93,24 @@ class MixCE(torch.nn.Module):
         #self.loss_func_coarse = torch.nn.CrossEntropyLoss(weight=coarse_weights, reduction=reduction)
         #self.fine_history, self.coarse_history = [], []
 
-    def forward(self, pred, y_fine, y_coarse, fine=True): # CE:(B,2), (B,)int
-        #
-        loss_fine = self.loss_func_fine(pred, y_fine) #if fine else 0
+    def forward(self, pred, y_fine, y_coarse, train=True): # CE:(B,2), (B,)int
+        # coarse
         #coarse_in = pred[:,:self.coarse_dim].sum(dim=1, keepdim=True)
         #coarse_ou = pred[:,self.coarse_dim:].sum(dim=1, keepdim=True)
         #coarse = torch.cat((coarse_in, coarse_ou), dim=1)
         #loss_coarse = self.loss_func_coarse(coarse, y_coarse)
-        #self.fine_history.append( float(loss_fine.cpu().detach().numpy()) if fine else -1 )
-        #self.coarse_history.append( float(loss_coarse.cpu().detach().numpy()) )
+
+        # fine  
+        if 1: #train:
+            loss_fine = self.loss_func_fine(pred, y_fine)
+            # history for balancing
+            #self.fine_history.append( float(loss_fine.cpu().detach().numpy()) )
+            #self.coarse_history.append( float(loss_coarse.cpu().detach().numpy()) )
+        #else:
+        #    ext = torch.zeros((pred.shape[0],pred.shape[1]-self.coarse_dim-1), dtype=torch.float32).to('cuda')
+        #    npred = torch.cat((pred[:,:self.coarse_dim], coarse_ou, ext), dim=1)
+        #    loss_fine = self.loss_func_fine(npred, y_fine)
+        
         return loss_fine #+ loss_coarse * self.lambda_const
 
 
@@ -117,7 +126,7 @@ def get_optimizer(model, optim_algo:str):
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_schedulerD[lr_scheduler])
         return optimizer, scheduler
     elif optim_algo.lower()=='adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=2e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=2e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
         return optimizer, scheduler
 

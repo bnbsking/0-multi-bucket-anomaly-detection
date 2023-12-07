@@ -1,4 +1,4 @@
-import argparse, glob, json, random, os
+import argparse, glob, json, os
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,7 @@ args.optim_algo = 'adamw'
 print(args)
 
 # global setting
+torch.manual_seed(7)
 os.makedirs(args.results, exist_ok=True)
 json.dump(vars(args), open(f"{args.results}/args_{args.mode}.json", "w"))
 classes = args.coarse_dim + 1
@@ -42,24 +43,31 @@ if 1:
     valid:  -                   same as above       -
                                 same as above
     infer:  -                   -                   custom
+
+    in-dist
+    0 atopic_dermatitis, 1 contact_dermatitis, 2 drug_eruption, 3 fungal_infections, 4 scabies, 5 urticaria, 6 psoriasis
     """
     # load in
     df = pd.read_csv("/volume/my-volume/itch/my_pruritus/clinical/annotation_train_round1_7class_bypat.csv")
     df_train, df_valid = df[df['fold_index']<5], df[df['fold_index']>=5]
+    if 1:
+        derm_in_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/in_derm/*.jpg"))
+        derm_in_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/in_derm/{i}-*.jpg")) for i in (0,4,5) ]
+        derm_in_labels = [0]*derm_in_n[0] + [4]*derm_in_n[1] + [5]*derm_in_n[2]
 
     # load out
-    out_train_path = sorted(glob.glob("../my_pruritus/ood_data/out_rel/[0-3]-*"))
-    out_valid_path = sorted(glob.glob("../my_pruritus/ood_data/out_rel/[4-7]-*"))
-    out_n = [ len(glob.glob(f"../my_pruritus/ood_data/out_rel/{i}-*")) for i in range(8) ] # [100]*8
+    out_train_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/out_rel/[0-3]-*"))
+    out_valid_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/out_rel/[4-7]-*"))
+    out_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/out_rel/{i}-*")) for i in range(8) ] # [100]*8
 
     # merge
     train_path = list(df_train['data']) + out_train_path
     train_fine_label = list(df_train['label']) + [args.coarse_dim]*out_n[0] + [args.coarse_dim+1]*out_n[1]\
         + [args.coarse_dim+2]*out_n[2] + [args.coarse_dim+3]*out_n[3]
     train_coarse_label = [0]*len(df_train['label']) + [1]*sum(out_n[:4])
-    valid_path = list(df_valid['data']) + out_valid_path
-    valid_fine_label = list(df_valid['label']) + [args.coarse_dim]*sum(out_n[4:])
-    valid_coarse_label = [0]*len(df_valid['label']) + [1]*sum(out_n[4:])
+    valid_path = list(df_valid['data']) + out_valid_path # + derm_in_path
+    valid_fine_label = list(df_valid['label']) + [args.coarse_dim]*sum(out_n[4:]) # + derm_in_labels 
+    valid_coarse_label = [0]*len(df_valid['label']) + [1]*sum(out_n[4:]) # + [0]*len(derm_in_labels)
     print(len(train_path), len(train_fine_label), len(train_coarse_label),\
         len(valid_path), len(valid_fine_label), len(valid_coarse_label)) # 1458, 1458, 1458, 572, 572, 572
 if args.mode == 'train':
@@ -102,7 +110,6 @@ history = utils.History(args.results)
 if args.mode=='train':
     train_label = train_loader.dataset.label_fine_list.clip(max=args.coarse_dim)
 if args.mode in ('valid', 'infer'):
-    model.eval()
     loss_all = []
 valid_label = valid_loader.dataset.label_fine_list.clip(max=args.coarse_dim)
 for ep in range(args.epochs):
@@ -186,7 +193,7 @@ for ep in range(args.epochs):
 
         if args.mode=='train':
             # checkpoint
-            if ep==0 or history.valid_map[-1]>max(history.valid_map):
+            if ep==0 or history.valid_map[-1]>=max(history.valid_map):
                 torch.save(model.state_dict(), os.path.join(args.results, 'model.pt'))
             history.save()
             batches, lf, lc = len(train_loader), loss_func.fine_history, loss_func.coarse_history

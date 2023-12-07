@@ -126,7 +126,7 @@ def get_optimizer(model, optim_algo:str):
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_schedulerD[lr_scheduler])
         return optimizer, scheduler
     elif optim_algo.lower()=='adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=2e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=2e-5)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
         return optimizer, scheduler
 
