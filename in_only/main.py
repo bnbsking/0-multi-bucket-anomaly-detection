@@ -227,7 +227,7 @@ df = pd.DataFrame({
     "data": valid_loader.dataset.path_list,
     "label": valid_label, 
     "pred_probs_all": map(tuple,pred_probs_all),
-    "pred_cls_all": pred_probs_all.max(axis=1),
+    "pred_cls_all": pred_probs_all.argmax(axis=1),
 })
 df.to_csv(os.path.join(args.results, f'pred_{args.mode}.csv'), index=False)
 

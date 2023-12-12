@@ -72,6 +72,9 @@ if 1:
     valid_path = list(df_valid['data']) + out_valid_path #+ derm_in_path_valid
     valid_fine_label = list(df_valid['label']) + [args.coarse_dim]*sum(out_n[4:]) #+ derm_in_labels_valid 
     valid_coarse_label = [0]*len(df_valid['label']) + [1]*sum(out_n[4:]) #+ [0]*len(derm_in_labels_valid)
+    infer_path = valid_path
+    infer_fine_label = [0]*len(infer_path)
+    infer_coarse_label = [0]*len(infer_path)
     print(len(train_path), len(train_fine_label), len(train_coarse_label),\
         len(valid_path), len(valid_fine_label), len(valid_coarse_label)) # 1458, 1458, 1458, 572, 572, 572
 if args.mode == 'train':
@@ -79,7 +82,7 @@ if args.mode == 'train':
 if args.mode in ('train', 'valid'):
     valid_loader = utils.get_loader(valid_path, valid_fine_label, valid_coarse_label, 'valid', args.batch_size)
 if args.mode == 'infer':
-    raise
+    valid_loader = utils.get_loader(infer_path, infer_fine_label, infer_coarse_label, 'infer', args.batch_size)
 
 # loss weights
 if args.mode=='train':
@@ -231,7 +234,7 @@ df = pd.DataFrame({
     "data": valid_loader.dataset.path_list,
     "label": valid_label, 
     "pred_probs_all": map(tuple,pred_probs_all),
-    "pred_cls_all": pred_probs_all.max(axis=1),
+    "pred_cls_all": pred_probs_all.argmax(axis=1),
 })
 df.to_csv(os.path.join(args.results, f'pred_{args.mode}.csv'), index=False)
 
