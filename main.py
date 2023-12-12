@@ -17,11 +17,11 @@ parser.add_argument("--resume", type=str, default='', help="checkpoint path")
 parser.add_argument("--epochs", type=int, default=500)
 parser.add_argument("--results", type=str, default="./results/exp1", help="save results and models folder")
 parser.add_argument("--threshold-opt", action='store_true', help="threshold opt refers last col as bg")
+parser.add_argument("--backbone", type=str, default='resnet50', choices=['resnet50', 'densenet121', 'ViT_b_16'])
+parser.add_argument("--lambda-const", type=float, default=1)
+parser.add_argument("--optim-algo", type=str, default='adamw', choices=['adam', 'adamw'])
 args = parser.parse_args()
-args.backbone = 'resnet50'
 args.pretrained = True
-args.lambda_const = 1
-args.optim_algo = 'adamw'
 print(args)
 
 # global setting
@@ -50,10 +50,14 @@ if 1:
     # load in
     df = pd.read_csv("/volume/my-volume/itch/my_pruritus/clinical/annotation_train_round1_7class_bypat.csv")
     df_train, df_valid = df[df['fold_index']<5], df[df['fold_index']>=5]
-    if 1:
+    if 0:
         derm_in_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/in_derm/*.jpg"))
-        derm_in_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/in_derm/{i}-*.jpg")) for i in (0,4,5) ]
-        derm_in_labels = [0]*derm_in_n[0] + [4]*derm_in_n[1] + [5]*derm_in_n[2]
+        import random
+        random.Random(7).shuffle(derm_in_path)
+        derm_in_path_train = derm_in_path[:int(len(derm_in_path)*0.8)]
+        derm_in_path_valid = derm_in_path[int(len(derm_in_path)*0.8):]
+        derm_in_labels_train = [ int(path.split("/")[-1].split('-')[0]) for path in derm_in_path_train ]
+        derm_in_labels_valid = [ int(path.split("/")[-1].split('-')[0]) for path in derm_in_path_valid ]
 
     # load out
     out_train_path = sorted(glob.glob("/volume/my-volume/itch/my_pruritus/ood_data/out_rel/[0-3]-*"))
@@ -61,13 +65,13 @@ if 1:
     out_n = [ len(glob.glob(f"/volume/my-volume/itch/my_pruritus/ood_data/out_rel/{i}-*")) for i in range(8) ] # [100]*8
 
     # merge
-    train_path = list(df_train['data']) + out_train_path
+    train_path = list(df_train['data']) + out_train_path #+ derm_in_path_train
     train_fine_label = list(df_train['label']) + [args.coarse_dim]*out_n[0] + [args.coarse_dim+1]*out_n[1]\
-        + [args.coarse_dim+2]*out_n[2] + [args.coarse_dim+3]*out_n[3]
-    train_coarse_label = [0]*len(df_train['label']) + [1]*sum(out_n[:4])
-    valid_path = list(df_valid['data']) + out_valid_path # + derm_in_path
-    valid_fine_label = list(df_valid['label']) + [args.coarse_dim]*sum(out_n[4:]) # + derm_in_labels 
-    valid_coarse_label = [0]*len(df_valid['label']) + [1]*sum(out_n[4:]) # + [0]*len(derm_in_labels)
+        + [args.coarse_dim+2]*out_n[2] + [args.coarse_dim+3]*out_n[3] #+ derm_in_labels_train
+    train_coarse_label = [0]*len(df_train['label']) + [1]*sum(out_n[:4]) #+ [0]*len(derm_in_labels_train)
+    valid_path = list(df_valid['data']) + out_valid_path #+ derm_in_path_valid
+    valid_fine_label = list(df_valid['label']) + [args.coarse_dim]*sum(out_n[4:]) #+ derm_in_labels_valid 
+    valid_coarse_label = [0]*len(df_valid['label']) + [1]*sum(out_n[4:]) #+ [0]*len(derm_in_labels_valid)
     print(len(train_path), len(train_fine_label), len(train_coarse_label),\
         len(valid_path), len(valid_fine_label), len(valid_coarse_label)) # 1458, 1458, 1458, 572, 572, 572
 if args.mode == 'train':

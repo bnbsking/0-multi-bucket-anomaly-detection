@@ -116,8 +116,8 @@ class MixCE(torch.nn.Module):
 
 def get_optimizer(model, optim_algo:str):
     if optim_algo.lower()=='adam':
-        epochs, lr_scheduler = 500, 'linear'
-        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+        epochs, lr_scheduler = 200, 'sine'
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
         lr_schedulerD = {\
             "none": lambda x: x,
             "linear": lambda x: (1 - x / (epochs - 1)) * (1.0 - 0.1) + 0.1,

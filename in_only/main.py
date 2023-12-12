@@ -17,11 +17,11 @@ parser.add_argument("--resume", type=str, default='', help="checkpoint path")
 parser.add_argument("--epochs", type=int, default=500)
 parser.add_argument("--results", type=str, default="./results/exp1", help="save results and models folder")
 parser.add_argument("--threshold-opt", action='store_true', help="threshold opt refers last col as bg")
+parser.add_argument("--backbone", type=str, default='resnet50', choices=['resnet50', 'densenet121', 'ViT_b_16'])
+parser.add_argument("--lambda-const", type=float, default=0)
+parser.add_argument("--optim-algo", type=str, default='adamw', choices=['adam', 'adamw'])
 args = parser.parse_args()
-args.backbone = 'resnet50'
 args.pretrained = True
-args.lambda_const = 0
-args.optim_algo = 'adamw'
 print(args)
 
 # global setting
@@ -65,9 +65,9 @@ if 1:
     train_fine_label = list(df_train['label']) #+ [args.coarse_dim]*out_n[0] + [args.coarse_dim+1]*out_n[1]\
         #+ [args.coarse_dim+2]*out_n[2] + [args.coarse_dim+3]*out_n[3]
     train_coarse_label = [0]*len(df_train['label']) #+ [1]*sum(out_n[:4])
-    valid_path = list(df_valid['data']) #+ out_valid_path + derm_in_path
-    valid_fine_label = list(df_valid['label']) #+ [args.coarse_dim]*sum(out_n[4:]) + derm_in_labels
-    valid_coarse_label = [0]*len(df_valid['label']) #+ [1]*sum(out_n[4:]) + + [0]*len(derm_in_labels)
+    valid_path = list(df_valid['data']) + derm_in_path #+ out_valid_path 
+    valid_fine_label = list(df_valid['label']) + derm_in_labels #+ [args.coarse_dim]*sum(out_n[4:]) 
+    valid_coarse_label = [0]*len(df_valid['label']) + [0]*len(derm_in_labels) #+ [1]*sum(out_n[4:]) 
     print(len(train_path), len(train_fine_label), len(train_coarse_label),\
         len(valid_path), len(valid_fine_label), len(valid_coarse_label)) # 1458, 1458, 1458, 572, 572, 572
 if args.mode == 'train':
@@ -127,7 +127,7 @@ for ep in range(args.epochs):
             x, y_fine, y_coarse = x.to(device), y_fine.to(device), y_coarse.to(device)
             y_fine, y_coarse = y_fine.reshape(-1), y_coarse.reshape(-1)
             optimizer.zero_grad()
-            pred = model(x) #print(torch.nn.functional.softmax(pred[:1,:],dim=1))
+            pred = model(x)
             loss = loss_func(pred, y_fine, y_coarse) # CE:(B,2),(B,)int
             loss.backward()
             optimizer.step()
